@@ -75,14 +75,14 @@ Using a configuration file like so, with Google as the provider:
     base_rdap_url: http://rdap.apnic.net
     idp_details:
       google:
-	id: {client-id}.apps.googleusercontent.com
-	secret: {client-secret}
-	discovery_uri: https://accounts.google.com/.well-known/openid-configuration
+        id: {client-id}.apps.googleusercontent.com
+        secret: {client-secret}
+        discovery_uri: https://accounts.google.com/.well-known/openid-configuration
     idp_mappings:
       - [ "@gmail.com", "google" ]
     filters:
       unauthenticated:
-	no_entities: 1
+        no_entities: 1
 
 An unauthenticated request can be sent like so:
 
@@ -99,8 +99,8 @@ operations, are covered in detail in the specification.
 
 ## Notes
 
- * This has only been tested with Google's identity provider, so other
-   providers may not work as expected.
+   * This has only been tested with Google's identity provider, so other
+     providers may not work as expected.
 
 ## License
 
