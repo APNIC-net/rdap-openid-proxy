@@ -1,0 +1,13 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+
+use APNIC::RDAP::OpenID::Proxy;
+use YAML;
+
+my $proxy = APNIC::RDAP::OpenID::Proxy->new(%{YAML::LoadFile($ARGV[0])});
+print "Running on port ".$proxy->{'port'}."...\n";
+$proxy->run();
+
+1;

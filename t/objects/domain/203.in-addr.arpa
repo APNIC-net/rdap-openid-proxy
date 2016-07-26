@@ -1,0 +1,78 @@
+{
+  "handle" : "203.in-addr.arpa",
+  "ldhName" : "203.in-addr.arpa",
+  "nameservers" : [ {
+    "ldhName" : "dns1.telstra.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "ns3.apnic.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "apnic1.dnsnode.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "ns4.apnic.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "sec1.authdns.ripe.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "tinnie.arin.net",
+    "objectClassName" : "nameserver"
+  }, {
+    "ldhName" : "ns1.apnic.net",
+    "objectClassName" : "nameserver"
+  } ],
+  "objectClassName" : "domain",
+  "entities" : [ {
+    "handle" : "DNS3-AP",
+    "vcardArray" : [ "vcard", [ [ "version", { }, "text", "4.0" ], [ "fn", { }, "text", "DNS Administration" ], [ "kind", { }, "text", "group" ], [ "adr", {
+      "label" : "6 Cordelia Street\\nSouth Brisbane\\nQLD 4101"
+    }, "text", [ "", "", "", "", "", "", "" ] ], [ "tel", {
+      "type" : "voice"
+    }, "text", "+61 7 3367 0490" ], [ "tel", {
+      "type" : "fax"
+    }, "text", "+61 7 3367 0482" ], [ "email", { }, "text", "dns-admin@apnic.net" ] ] ],
+    "roles" : [ "administrative", "technical" ],
+    "objectClassName" : "entity",
+    "remarks" : [ {
+      "title" : "remarks",
+      "description" : [ "DNS in-addr.arpa zone files maintainer" ]
+    } ],
+    "links" : [ {
+      "value" : "http://rdap.apnic.net/domain/203.in-addr.arpa",
+      "rel" : "self",
+      "href" : "http://rdap.apnic.net/entity/DNS3-AP",
+      "type" : "application/rdap+json"
+    } ]
+  } ],
+  "remarks" : [ {
+    "title" : "description",
+    "description" : [ "reverse zone for 203/8" ]
+  } ],
+  "links" : [ {
+    "value" : "http://rdap.apnic.net/domain/203.in-addr.arpa",
+    "rel" : "self",
+    "href" : "http://rdap.apnic.net/domain/203.in-addr.arpa",
+    "type" : "application/rdap+json"
+  } ],
+  "events" : [ {
+    "eventAction" : "last changed",
+    "eventDate" : "2016-02-10T05:03:29Z"
+  } ],
+  "rdapConformance" : [ "rdap_level_0" ],
+  "notices" : [ {
+    "title" : "Source",
+    "description" : [ "Objects returned came from source", "APNIC" ]
+  }, {
+    "title" : "Terms and Conditions",
+    "description" : [ "This is the APNIC WHOIS Database query service. The objects are in RDAP format." ],
+    "links" : [ {
+      "value" : "http://rdap.apnic.net/domain/203.in-addr.arpa",
+      "rel" : "terms-of-service",
+      "href" : "http://www.apnic.net/db/dbcopyright.html",
+      "type" : "text/html"
+    } ]
+  } ],
+  "port43" : "whois.apnic.net"
+}

@@ -1,0 +1,12 @@
+port: 38279
+base_rdap_url: http://rdap.apnic.net
+idp_details:
+  google:
+    id: 547861740795-obcjbtrh2mnbb6h46l422502gn28jqrb.apps.googleusercontent.com
+    secret: CtkGWEcBRzTAqns-JlwPDGeG
+    discovery_uri: https://accounts.google.com/.well-known/openid-configuration
+idp_mappings:
+  - [ "@gmail.com", "google" ]
+filters:
+  unauthenticated:
+    no_entities: 1
