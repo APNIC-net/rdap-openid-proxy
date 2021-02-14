@@ -57,6 +57,7 @@ sub start_test_servers
                 discovery_uri => 'http://localhost:'.$idp_port.'/.well-known/openid-configuration',
             },
         },
+        redirect_uri => 'http://localhost:0/authorised',
         idp_mappings => [
             [ "\@gmail.com", "google" ],
             [ "^.*\$", "test" ]

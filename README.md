@@ -1,7 +1,7 @@
 # rdap-openid-proxy
 
 An OpenID Connect authentication proxy for an RDAP server, based on
-[draft-hollenbeck-regext-rdap-openid](https://tools.ietf.org/html/draft-hollenbeck-regext-rdap-openid).
+[draft-ietf-regext-rdap-openid](https://tools.ietf.org/html/draft-ietf-regext-rdap-openid).
 This is a proof-of-concept only, and is not intended for production
 use.
 
@@ -28,6 +28,7 @@ Configuration is in YAML format, like so:
         secret: {idp-client-secret}
         discovery_uri: {idp-discovery-uri}
       ...
+    redirect_uri: {redirect-uri}
     idp_mappings:
       - [ {regex}, {name} ]
       - ...
@@ -99,8 +100,11 @@ operations, are covered in detail in the specification.
 
 ## Notes
 
-   * This has only been tested with Google's identity provider, so other
-     providers may not work as expected.
+   * This has been tested with Google's identity provider and with
+     Keycloak.  Other providers may not work as expected.
+   * A test service that uses APNIC's SSO system, configured to omit
+     entities for unauthenticated requests, is available at
+     [https://registry-testbed.apnic.net/rdap](https://registry-testbed.apnic.net/rdap).
 
 ## License
 

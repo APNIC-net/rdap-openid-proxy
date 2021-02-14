@@ -30,7 +30,7 @@ sub new
     my $self = \%args;
 
     if (not defined $self->{"port"}) {
-        $self->{"port"} = 8081;
+        $self->{"port"} = 8082;
     }
 
     my $ua = LWP::UserAgent->new();

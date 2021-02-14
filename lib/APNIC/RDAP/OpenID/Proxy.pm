@@ -6,6 +6,7 @@ use strict;
 use APNIC::RDAP::OpenID::Utils qw(access_token_hash);
 
 use Crypt::JWT qw(decode_jwt);
+use Data::Dumper;
 use HTTP::Daemon;
 use HTTP::Status qw(:constants);
 use JSON::XS qw(encode_json decode_json);
@@ -24,7 +25,7 @@ sub load_keys
     if ($jwks_uri) {
         my $res = $ua->get($jwks_uri);
         if (not $res->is_success()) {
-            die "Unable to fetch key URI: ".$res->code();
+            die "Unable to fetch key URI: ".Dumper($res);
         }
         my $jwk_data = decode_json($res->decoded_content());
         $idp_data->{'keys'} =
@@ -44,7 +45,7 @@ sub load_idp
 
     my $res = $ua->get($discovery_uri);
     if (not $res->is_success()) {
-        die "Unable to fetch discovery URI: ".$res->code();
+        die "Unable to fetch discovery URI: ".Dumper($res);
     }
     my $data = decode_json($res->decoded_content());
 
@@ -87,6 +88,10 @@ sub new
         $self->{"port"} = 8080;
     }
 
+    if ($self->{'no_tls_checks'}) {
+        $ENV{PERL_LWP_SSL_VERIFY_HOSTNAME} = 0;
+    }
+
     my $ua = LWP::UserAgent->new();
     $self->{'ua'} = $ua;
 
@@ -106,8 +111,12 @@ sub new
     if (not $d) {
         die "Unable to start server: $!";
     }
-    $self->{"port"} = $d->sockport();
+    my $port = $d->sockport();
+    $self->{"port"} = $port;
     $self->{"d"} = $d;
+
+    $self->{'redirect_uri'}
+        =~ s/^http:\/\/localhost:0\//http:\/\/localhost:$port\//;
 
     bless $self, $class;
     return $self;
@@ -183,6 +192,14 @@ sub post_token_revoke
     my $idp_name = $self->id_to_idp_name($id);
     my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
     my $idp_revocation_uri = $discovery->{'revocation_endpoint'};
+    if (not $idp_revocation_uri) {
+        print STDERR "IDP '$idp_name' does not support revocation\n";
+        return $self->error(
+            HTTP_BAD_REQUEST,
+            [ { title       => "Token Revocation Result",
+                description => "Token Revocation Not Supported" } ]
+        );
+    }
 
     my $req = HTTP::Request->new();
     $req->uri($idp_revocation_uri);
@@ -401,9 +418,10 @@ sub retrieve_tokens
         return;
     }
 
+    warn "PORT: $port";
     my $tokens = $idp_client->get_access_token(
         code         => $code,
-        redirect_uri => "http://localhost:$port/authorised",
+        redirect_uri => $self->{'redirect_uri'},
     );
     if (not $tokens) {
         warn $idp_client->errstr();
@@ -517,7 +535,7 @@ sub authenticate_user
     my $refresh_required =
         ($path eq 'tokens' and (($args{'refresh'} || '') eq 'true'));
 
-    my $auth_uri = URI->new("http://localhost:$port/authorised");
+    my $auth_uri = URI->new($self->{'redirect_uri'});
     my $redirect_uri =
         $idp_client->uri_to_redirect(
             redirect_uri => $auth_uri->as_string(),
@@ -563,6 +581,7 @@ sub run
 
     my $d = $self->{"d"};
     while (my $c = $d->accept()) {
+        print STDERR "Accepted connection $c\n";
         while (my $r = $c->get_request()) {
             my $method = $r->method();
             my $path = $r->uri()->path();
@@ -583,10 +602,13 @@ sub run
                 $res_str =~ s/\r/\\r/g;
                 print STDERR "$res_str\n";
                 $c->send_response($res);
+                print STDERR "Sent response\n";
             }
+            last;
         }
         $c->close();
         undef $c;
+        print STDERR "Finished with connection $c\n";
     }
 }
 
