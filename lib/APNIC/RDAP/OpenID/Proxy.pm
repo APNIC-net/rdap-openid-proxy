@@ -386,8 +386,6 @@ sub get_query_using_token
         return $self->error(HTTP_FORBIDDEN);
     }
 
-    warn "($id_token, $access_token)";
-
     # Do not pass the access token here, since it might have been
     # refreshed since the ID token was issued.
     my $res = $self->validate_id_token($id_token);
@@ -418,7 +416,6 @@ sub retrieve_tokens
         return;
     }
 
-    warn "PORT: $port";
     my $tokens = $idp_client->get_access_token(
         code         => $code,
         redirect_uri => $self->{'redirect_uri'},
@@ -536,16 +533,20 @@ sub authenticate_user
         ($path eq 'tokens' and (($args{'refresh'} || '') eq 'true'));
 
     my $auth_uri = URI->new($self->{'redirect_uri'});
+    my %extra = (
+        login_hint => $id,
+        # These are Google-specific parameters.
+        ($refresh_required)
+            ? (approval_prompt => 'force',
+               access_type     => 'offline')
+            : (),
+    );
     my $redirect_uri =
         $idp_client->uri_to_redirect(
             redirect_uri => $auth_uri->as_string(),
             scope        => 'openid',
             state        => encode_json([$id, $path, \%args]),
-            # These are Google-specific parameters.
-            ($refresh_required)
-                ? (extra => { approval_prompt => 'force',
-                              access_type     => 'offline' })
-                : (),
+            extra        => \%extra,
         );
 
     my $res = HTTP::Response->new(HTTP_FOUND);
