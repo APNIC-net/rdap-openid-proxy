@@ -82,8 +82,8 @@ For authenticated requests, two filters are defined:
 
    * `pass_authenticated`, which passes an `authenticated=1` query
      argument to the backend; and
-   * `pass_purpose`, which passes a `purpose` query argument to the
-     backend, using the purpose from the user's `userinfo` endpoint.
+   * `pass_purpose`, which passes the purposes from the user's claims
+     to the backend.
 
 ## Example usage
 
@@ -110,8 +110,8 @@ A standard request can be sent like so:
 To log in via an OIDC provider, the client sends a request to the
 'login' endpoint.  (In this instance, because there is only one IDP,
 there is no need to provide the identifier in the request.  However,
-depending on the configuration in these respects, an identifier and/or
-an ISS may need to be provided.)
+depending on the configuration, an identifier and/or an issuer
+identifier may need to be provided.)
 
 After logging in successfully, subsequent RDAP requests will be
 considered authenticated.
