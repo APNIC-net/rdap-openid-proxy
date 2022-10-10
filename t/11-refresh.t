@@ -41,7 +41,11 @@ my $pids;
     ok($content->{'farv1_session'},
         'Session present in response (session has not expired yet)'); 
 
-    sleep(2);
+    for (1..3) {
+        diag "Sleeping for 1s...\n";
+        sleep(1);
+    }
+
     $res = $ua->get("$host/domain/203.in-addr.arpa");
     is($res->code(), 403, 'Authenticated request failed (expired)');
 

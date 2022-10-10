@@ -40,14 +40,14 @@ my $pids;
     is($res->code(), 200, 'Authenticated request was successful');
     $content = decode_json($res->content());
 
-    ok(exists $content->{'iss'},
+    ok(exists $content->{'farv1_session'}->{'iss'},
         'Login response includes issuer identifier');
 
-    ok($content->{'sessionInfo'},
+    ok($content->{'farv1_session'}->{'sessionInfo'},
         'Login response includes session information');
-    ok($content->{'sessionInfo'}->{'tokenExpiration'},
+    ok($content->{'farv1_session'}->{'sessionInfo'}->{'tokenExpiration'},
         'Login response includes token expiration information');
-    ok(exists $content->{'sessionInfo'}->{'tokenRefresh'},
+    ok(exists $content->{'farv1_session'}->{'sessionInfo'}->{'tokenRefresh'},
         'Login response includes token refresh information');
 
     my ($cookie) = $jar->cookies_for('http://localhost');
@@ -59,7 +59,11 @@ my $pids;
     ok($content->{'entities'},
         'Authenticated request contains entities');
 
-    sleep(2);
+    for (1..3) {
+        diag "Sleeping for 1s...\n";
+        sleep(1);
+    }
+
     $res = $ua->get("$host/domain/203.in-addr.arpa");
     is($res->code(), 403, 'Authenticated request failed (expired)');
 

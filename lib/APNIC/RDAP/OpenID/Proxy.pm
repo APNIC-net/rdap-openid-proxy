@@ -12,6 +12,7 @@ use HTTP::Status qw(:constants);
 use JSON::XS qw(encode_json decode_json);
 use OIDC::Lite::Client::WebServer;
 use OIDC::Lite::Model::IDToken;
+use List::Util qw(max);
 
 use constant BAD_REQUEST => HTTP::Response->new(HTTP_BAD_REQUEST);
 
@@ -619,6 +620,10 @@ sub get_login_response
 
     my $expiry_time = time() + $tokens->expires_in();
 
+        warn time();
+        warn $tokens->expires_in();
+        warn $expiry_time;
+
     my %session_internal = (
         session_id => $session_id,
         access_token => $access_token,
@@ -665,7 +670,7 @@ sub get_query_using_cookie
     if ($session->{'expiry_time'} < time()) {
         warn "Access token has expired";
         # Do not delete session, otherwise user cannot refresh token.
-        return $self->error(HTTP_FORBIDDEN);
+        return $self->error(HTTP_CONFLICT);
     }
 
     # (The ID token used to be validated on each request, but pretty
@@ -703,6 +708,7 @@ sub refresh_session
     if ($new_access_token) {
         $session->{'new_access_token'} = $new_access_token->access_token();
         $session->{'refresh_token'} = $new_access_token->refresh_token();
+
         $session->{'expiry_time'} = time() + $new_access_token->expires_in();
         $session->{'session_external'}->{'sessionInfo'} = {
             tokenExpiration => $new_access_token->expires_in(),
@@ -806,6 +812,39 @@ sub logout_session
     return $res;
 }
 
+sub status_session
+{
+    my ($self, $c, $r, $session) = @_;
+
+    my $uri = $r->uri();
+    my $path = $uri->path();
+    my %args = $uri->query_form();
+
+    my ($access_token, $id_token, $refresh_token) =
+        @{$session}{qw(access_token id_token refresh_token)};
+
+    if ($session->{'expiry_time'} < time()) {
+        warn "Access token has expired";
+        # Do not delete session, otherwise user cannot refresh token.
+        return $self->error(HTTP_CONFLICT);
+    }
+
+    my $content = {
+        notices => [
+            { title => 'Session Status Result',
+              description => [
+                'Session status succeeded'
+              ] }
+        ],
+        farv1_session => $session->{'session_external'}
+    };
+
+    my $res = HTTP::Response->new(HTTP_OK);
+    $res->header('Content-Type', 'application/rdap+json');
+    $res->content(encode_json($content));
+    return $res;
+}
+
 sub get
 {
     my ($self, $c, $r) = @_;
@@ -823,10 +862,17 @@ sub get
             return $self->error(HTTP_FORBIDDEN);
         }
         my $session = $self->{'sessions'}->{$id};
+        
+        my $t1 = $session->{'expiry_time'} - time();
+        $session->{'session_external'}->{'sessionInfo'}->{'tokenExpiration'} =
+            max($t1, 0);
+
         if ($path eq '/farv1_session/refresh') {
             return $self->refresh_session($c, $r, $session);
         } elsif ($path eq '/farv1_session/logout') {
             return $self->logout_session($c, $r, $session);
+        } elsif ($path eq '/farv1_session/status') {
+            return $self->status_session($c, $r, $session);
         } else {
             return $self->get_query_using_cookie($c, $r, $session);
         }

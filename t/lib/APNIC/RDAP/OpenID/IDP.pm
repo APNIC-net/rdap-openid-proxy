@@ -21,8 +21,8 @@ my @PURPOSES = qw(domainNameControl
                   technicalIssueResolution
                   domainNameCertification);
 
-# Expire sessions after 1 second.
-my $EXPIRY = 1;
+# Expire sessions after 2 seconds.
+my $EXPIRY = 2;
 
 our $VERSION = '0.01';
 
