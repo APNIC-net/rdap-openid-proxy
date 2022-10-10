@@ -1,7 +1,7 @@
 # rdap-openid-proxy
 
 An OpenID Connect authentication proxy for an RDAP server, based on
-[draft-ietf-regext-rdap-openid](https://tools.ietf.org/html/draft-ietf-regext-rdap-openid).
+[draft-ietf-regext-rdap-openid](https://tools.ietf.org/html/draft-ietf-regext-rdap-openid-17).
 This is a proof-of-concept only, and is not intended for production
 use.
 
@@ -22,9 +22,13 @@ Configuration is in YAML format, like so:
 
     port: {port}
     base_rdap_url: {base-rdap-url}
+    dnt_supported: {boolean}
+    issuer_identifier_supported: {boolean}
+    implicit_token_refresh_supported: {boolean}
     idp_details:
       {name}:
         id: {idp-client-id}
+        name: {idp-name}
         secret: {idp-client-secret}
         discovery_uri: {idp-discovery-uri}
       ...
@@ -43,8 +47,21 @@ Configuration is in YAML format, like so:
 `base_rdap_url` is the base URL of the RDAP server for which this
 server is operating as a proxy.
 
+`dnt_supported` indicates whether 'do not track'-style functionality
+is supported (defaults to false).
+
+`issuer_identifier_supported` indicates whether the client can
+specify an ISS value manually in a 'login' request (defaults to
+true).
+
+`implicit_token_refresh_supported` indicates whether the server will
+attempt to refresh the access token if it has expired (defaults to
+true).
+
 `idp_details` maps from a server-specific name for an
 identity provider to the configuration details for that provider.
+`idp-name` is a descriptive string that is returned in the RDAP
+`/help` response.
 
 `idp_mappings` is a list of lists, where each element list contains a
 Perl regular expression and an identity provider name.  This is used
@@ -85,26 +102,24 @@ Using a configuration file like so, with Google as the provider:
       unauthenticated:
         no_entities: 1
 
-An unauthenticated request can be sent like so:
+A standard request can be sent like so:
 
     $ curl http://localhost:38279/domain/203.in-addr.arpa
     {"ldhName":"203.in-addr.arpa", ...
 
-An authenticated request can be sent in the same way, by including
-`id={username}@gmail.com` as a query argument in the URL.
+To log in via an OIDC provider, the client sends a request to the
+'login' endpoint.  (In this instance, because there is only one IDP,
+there is no need to provide the identifier in the request.  However,
+depending on the configuration in these respects, an identifier and/or
+an ISS may need to be provided.)
 
-The `/tokens` endpoint can be used to retrieve access and refresh
-tokens, to facilitate scripted authenticated access to the server.
-This mode of operation, as well as the revocation and refresh
-operations, are covered in detail in the specification.
+After logging in successfully, subsequent RDAP requests will be
+considered authenticated.
 
 ## Notes
 
    * This has been tested with Google's identity provider and with
      Keycloak.  Other providers may not work as expected.
-   * A test service that uses APNIC's SSO system, configured to omit
-     entities for unauthenticated requests, is available at
-     [https://registry-testbed.apnic.net/rdap](https://registry-testbed.apnic.net/rdap).
 
 ## License
 

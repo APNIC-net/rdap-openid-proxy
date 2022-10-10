@@ -48,19 +48,30 @@ sub run
             my $path = $r->uri()->path();
             print STDERR "$method $path\n";
 
-            my $res = eval {
-		my $object_path = "t/objects/$path";
-                my $res;
-		if (-e $object_path) {
-		    my $data = read_file($object_path);
-		    $res = HTTP::Response->new(HTTP_OK);
-		    $res->header('Content-Type' => 'application/rdap+json');
-		    $res->content($data);
-		} else {
-                    $res = HTTP::Response->new(HTTP_NOT_FOUND);
-		}
-                $res;
-            };
+            my $res;
+            if ($path eq '/help') {
+                $res = HTTP::Response->new(HTTP_OK);
+                $res->header('Content-Type' => 'application/rdap+json');
+                $res->content("{}");
+            } elsif ($path eq '/farv1_session/login') {
+                $res = HTTP::Response->new(HTTP_OK);
+                $res->header('Content-Type' => 'application/rdap+json');
+                $res->content("{}");
+            } else {
+                $res = eval {
+                    my $object_path = "t/objects/$path";
+                    my $res;
+                    if (-e $object_path) {
+                        my $data = read_file($object_path);
+                        $res = HTTP::Response->new(HTTP_OK);
+                        $res->header('Content-Type' => 'application/rdap+json');
+                        $res->content($data);
+                    } else {
+                        $res = HTTP::Response->new(HTTP_NOT_FOUND);
+                    }
+                    $res;
+                };
+            }
             if (my $error = $@) {
                 print STDERR "Unable to process request: $error\n";
                 $c->send_error(500);

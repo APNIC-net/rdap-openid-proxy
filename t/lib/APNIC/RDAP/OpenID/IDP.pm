@@ -21,6 +21,9 @@ my @PURPOSES = qw(domainNameControl
                   technicalIssueResolution
                   domainNameCertification);
 
+# Expire sessions after 1 second.
+my $EXPIRY = 1;
+
 our $VERSION = '0.01';
 
 sub new
@@ -114,9 +117,10 @@ sub authorise
     my %payload = (
         aud     => $client_id,
         iss     => 'test-iss',
-        exp     => time() + 3600,
+        exp     => time() + $EXPIRY,
         azp     => $client_id,
         at_hash => $at_hash,
+        sub     => $client_id,
     );
 
     my $private_key = decode_json(PRIVATE_KEY_JSON);
@@ -133,14 +137,14 @@ sub authorise
         refresh_token => $refresh_token,
         id_token      => $id_token,
         token_type    => 'bearer',
-        expires_in    => 3600,
+        expires_in    => $EXPIRY,
     };
     $self->{'refresh_tokens'}->{$refresh_token} = {
         access_token => $access_token
     };
     $self->{'access_tokens'}->{$access_token} = {
-        name    => $session_state,
-        purpose => $PURPOSES[int(rand(@PURPOSES))],
+        name                  => $session_state,
+        rdap_allowed_purposes => [ $PURPOSES[int(rand(@PURPOSES))] ],
     };
 
     my %data = (
@@ -226,7 +230,7 @@ sub post_token
             access_token  => $access_token,
             refresh_token => $refresh_token,
             token_type    => 'bearer',
-            expires_in    => 3600
+            expires_in    => $EXPIRY
         );
 
         return $self->success(\%data);

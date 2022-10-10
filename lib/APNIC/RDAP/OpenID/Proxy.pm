@@ -265,36 +265,48 @@ sub get_query_unauthenticated
         delete $data{'entities'};
     }
 
+    if ($path eq '/help') {
+        my @providers;
+        for my $idp_name (keys %{$self->{'idp'}}) {
+            my $data = $self->{'idp'}->{$idp_name};
+            my $iss = $data->{'discovery'}->{'issuer'};
+            my $name = $data->{'name'} || '(Unknown)';
+            push @providers, { iss  => $iss,
+                               name => $name };
+        }
+        if (@providers == 1) {
+            $providers[0]->{'default'} = \1;
+        }
+        my $euis =
+            (scalar @{$self->{'idp_mappings'} || []} > 1) ? \1 : \0;
+        $data{'farv1_openidcConfiguration'} = {
+            dntSupported =>
+                ($self->{'dnt_supported'} ? \1 : \0),
+            endUserIdentifierDiscoverySupported => $euis,
+            issuerIdentifierSupported =>
+                ($self->{'issuer_identifier_supported'} ? \1 : \0),
+            implicitTokenRefreshSupported =>
+                ($self->{'implicit_token_refresh_supported'} ? \1 : \0),
+            openidcProviders => \@providers,
+        };
+    }
+
     $res->content(encode_json(\%data));
     return $res;
 }
 
 sub get_query_authenticated
 {
-    my ($self, $path, $args, $id_token, $access_token) = @_;
+    my ($self, $path, $args, $id_token, $access_token, $session) = @_;
 
     my $filters = $self->{'filters'}->{'authenticated'};
     if ($filters->{'pass_purpose'}) {
-        my $id_token_obj = OIDC::Lite::Model::IDToken->load($id_token); 
-        my $iss = $id_token_obj->payload()->{'iss'};
-        my $idp_name = $self->{'idp_iss_to_name'}->{$iss};
-        
-        my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
-        my $userinfo_uri = $discovery->{'userinfo_endpoint'};
-        my $req = HTTP::Request->new();
-        $req->header('Authorization', 'Bearer '.$access_token);
-        $req->uri($userinfo_uri);
-        $req->method('GET');
-        my $ua = $self->{'ua'};
-        my $res = $ua->request($req);
-        if ($res->code() != HTTP_OK) {
-            warn "Unable to fetch userinfo";
-            return $self->error($res->code());
-        }
-        my $data = decode_json($res->decoded_content());
-        if ($data->{'purpose'}) {
-            warn "Purpose: ".$data->{'purpose'};
-            $args->{'purpose'} = $data->{'purpose'};
+        my $rap =
+            $session->{'session_external'}
+                    ->{'userClaims'}
+                    ->{'rdap_allowed_purposes'};
+        if ($rap) {
+            $args->{'purpose'} = $rap;
         }
     }
 
@@ -554,6 +566,115 @@ sub authenticate_user
     return $res;
 }
 
+sub get_login_response
+{
+    my ($self, $c, $r) = @_;
+
+    my $uri = $r->uri();
+    my $path = $uri->path();
+    my %args = $uri->query_form();
+
+    my ($code, $state) = delete @args{qw(code state)};
+
+    my $tokens = $self->retrieve_tokens($c, $r, $code);
+    if (not $tokens) {
+        return $self->error(HTTP_BAD_REQUEST);
+    }
+
+    my $access_token = $tokens->access_token();
+    my $id_token = $tokens->id_token();
+
+    my $res = $self->validate_id_token($id_token, $access_token);
+    if (not $res) {
+        return $self->error(HTTP_BAD_REQUEST);
+    }
+
+    my $id_token_obj = OIDC::Lite::Model::IDToken->load($id_token); 
+    my $iss = $id_token_obj->payload()->{'iss'};
+    my $idp_name = $self->{'idp_iss_to_name'}->{$iss};
+    
+    my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
+    my $userinfo_uri = $discovery->{'userinfo_endpoint'};
+    my $req = HTTP::Request->new();
+    $req->header('Authorization', 'Bearer '.$access_token);
+    $req->uri($userinfo_uri);
+    $req->method('GET');
+    my $ua = $self->{'ua'};
+    $res = $ua->request($req);
+    if ($res->code() != HTTP_OK) {
+        warn "Unable to fetch userinfo";
+        return $self->error($res->code());
+    }
+    my $data = decode_json($res->decoded_content());
+    if ($data->{'rdap_allowed_purposes'}) {
+        warn "Purpose: ".Dumper($data->{'rdap_allowed_purposes'});
+    }
+
+    my @chars = ('a'..'z');
+    my $session_id;
+    do {
+        $session_id = join '', map { $chars[int(rand(@chars))] } (1..8);
+    } while ($self->{'sessions'}->{$session_id});
+
+    my $expiry_time = time() + $tokens->expires_in();
+
+    my %session_internal = (
+        session_id => $session_id,
+        access_token => $access_token,
+        refresh_token => $tokens->refresh_token(),
+        id_token => $id_token_obj,
+        expiry_time => $expiry_time,
+        session_external => {
+            iss => $id_token_obj->{'payload'}->{'iss'},
+            userClaims => {
+                sub => $id_token_obj->{'payload'}->{'sub'},
+                %{$data}
+            },
+            sessionInfo => {
+                tokenExpiration => $tokens->expires_in(),
+                tokenRefresh => ($tokens->refresh_token() ? \1 : \0)
+            }
+        }
+    );
+    $self->{'sessions'}->{$session_id} = \%session_internal;
+
+    $res = HTTP::Response->new(HTTP_OK);
+    $res->header('Content-Type', 'application/rdap+json');
+    $res->header('Set-Cookie', 'id='.$session_id.'; Max-Age=3600');
+    $res->content(encode_json($session_internal{'session_external'}));
+
+    return $res;
+}
+
+sub get_query_using_cookie
+{
+    my ($self, $c, $r, $session) = @_;
+
+    my $uri = $r->uri();
+    my $path = $uri->path();
+    my %args = $uri->query_form();
+
+    my ($access_token, $id_token) =
+        @{$session}{qw(access_token id_token)};
+
+    if ($session->{'expiry_time'} < time()) {
+        warn "Access token has expired, deleting session";
+        delete $self->{'sessions'}->{$session->{'session_id'}};
+        return $self->error(HTTP_FORBIDDEN);
+    }
+
+    if (not $access_token) {
+        warn "No access token found";
+        return $self->error(HTTP_FORBIDDEN);
+    }
+
+    # (The ID token used to be validated on each request, but pretty
+    # sure that's unnecessary now.)
+
+    return $self->get_query_authenticated($path, \%args,
+                                          $id_token, $access_token,
+                                          $session);
+}
 
 sub get
 {
@@ -563,13 +684,24 @@ sub get
     my $path = $uri->path();
     my %args = $uri->query_form();
 
-    if ($args{'id_token'}) {
+    my $cookie = $r->headers()->header('Cookie');
+    if ($cookie) {
+        my ($id) = ($cookie =~ /^id=(.*)$/);
+        my $has_session = exists $self->{'sessions'}->{$id};
+        if (not $has_session) {
+            warn "Session '$id' not found";
+            return $self->error(HTTP_FORBIDDEN);
+        }
+        my $session = $self->{'sessions'}->{$id};
+        return $self->get_query_using_cookie($c, $r, $session);
+    } elsif ($args{'id_token'}) {
         return $self->get_query_using_token($c, $r);
     } elsif ($args{'code'}) {
-        return $self->get_query_using_code($c, $r);
+        # Login response.
+        return $self->get_login_response($c, $r);
     } elsif ($args{'id'} and $args{'refresh_token'} and $path eq '/tokens') {
         return $self->refresh_token($c, $r);
-    } elsif ($args{'id'}) {
+    } elsif ($path eq '/farv1_session/login') {
         return $self->authenticate_user($c, $r);
     } else {
         return $self->get_query_unauthenticated($path, \%args);
@@ -608,8 +740,8 @@ sub run
             last;
         }
         $c->close();
-        undef $c;
         print STDERR "Finished with connection $c\n";
+        undef $c;
     }
 }
 
