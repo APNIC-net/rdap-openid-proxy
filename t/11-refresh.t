@@ -47,7 +47,7 @@ my $pids;
     }
 
     $res = $ua->get("$host/domain/203.in-addr.arpa");
-    is($res->code(), 403, 'Authenticated request failed (expired)');
+    is($res->code(), 409, 'Authenticated request failed (expired)');
 
     $res = $ua->get("$host/farv1_session/refresh?fail=1");
     is($res->code(), 200, 'Got refresh response');
