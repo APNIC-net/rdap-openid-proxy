@@ -16,6 +16,8 @@ use base qw(Exporter);
 
 sub start_test_servers
 {
+    my ($extra) = @_;
+
     my @pids;
     my @servers;
 
@@ -69,7 +71,8 @@ sub start_test_servers
             authenticated => {
                 pass_purpose => 1
             },
-        }
+        },
+        %{$extra},
     );
 
     if (my $pid = fork()) {

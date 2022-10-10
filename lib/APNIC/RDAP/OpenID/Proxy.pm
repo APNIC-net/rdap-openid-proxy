@@ -420,8 +420,6 @@ sub retrieve_tokens
     my %args = $uri->query_form();
 
     my $data = decode_json($args{'state'});
-    use Data::Dumper;
-    warn Dumper($data);
     my $prev_args = $data->[3];
     my $id = $data->[0];
     my $idp_client;
@@ -545,9 +543,6 @@ sub authenticate_user
     my $path = $uri->path();
     my %args = $uri->query_form();
     my $port = $self->{'port'};
-
-        use Data::Dumper;
-        warn Dumper($self->{'idp_iss_to_name'});
 
     my $iss = $args{'farv1_iss'};
     my $id = $args{'farv1_id'};
@@ -683,13 +678,23 @@ sub get_query_using_cookie
     my $path = $uri->path();
     my %args = $uri->query_form();
 
-    my ($access_token, $id_token) =
-        @{$session}{qw(access_token id_token)};
+    my ($access_token, $id_token, $refresh_token) =
+        @{$session}{qw(access_token id_token refresh_token)};
 
     if ($session->{'expiry_time'} < time()) {
         warn "Access token has expired";
-        # Do not delete session, otherwise user cannot refresh token.
-        return $self->error(HTTP_CONFLICT);
+        my $return_fail = 1;
+        if ($self->{'implicit_token_refresh_supported'}
+                and $refresh_token) {
+            warn "Attempting to refresh implicitly";
+            my $res = $self->refresh_session($c, $r, $session);
+            if ($res->is_success()) {
+                $return_fail = 0;
+            }
+        }
+        if ($return_fail) {
+            return $self->error(HTTP_CONFLICT);
+        }
     }
 
     # (The ID token used to be validated on each request, but pretty
@@ -844,8 +849,18 @@ sub status_session
 
     if ($session->{'expiry_time'} < time()) {
         warn "Access token has expired";
-        # Do not delete session, otherwise user cannot refresh token.
-        return $self->error(HTTP_CONFLICT);
+        my $return_fail = 1;
+        if ($self->{'implicit_token_refresh_supported'}
+                and $refresh_token) {
+            warn "Attempting to refresh implicitly";
+            my $res = $self->refresh_session($c, $r, $session);
+            if ($res->is_success()) {
+                $return_fail = 0;
+            }
+        }
+        if ($return_fail) {
+            return $self->error(HTTP_CONFLICT);
+        }
     }
 
     my $content = {
