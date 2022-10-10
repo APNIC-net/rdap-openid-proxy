@@ -183,47 +183,6 @@ sub success
     return $self->response(HTTP_OK, $notices, $extra);
 }
 
-sub post_token_revoke
-{
-    my ($self, $c, $r) = @_;
-
-    my %args = $r->uri()->query_form();
-    my ($id, $token) = @args{qw(id token)};
-
-    my $idp_name = $self->id_to_idp_name($id);
-    my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
-    my $idp_revocation_uri = $discovery->{'revocation_endpoint'};
-    if (not $idp_revocation_uri) {
-        print STDERR "IDP '$idp_name' does not support revocation\n";
-        return $self->error(
-            HTTP_BAD_REQUEST,
-            [ { title       => "Token Revocation Result",
-                description => [ "Token Revocation Not Supported" ] } ]
-        );
-    }
-
-    my $req = HTTP::Request->new();
-    $req->uri($idp_revocation_uri);
-    $req->method('POST');
-    $req->content('token='.$token);
-    $req->header('Content-Type' => 'application/x-www-form-urlencoded');
-
-    my $ua = $self->{'ua'};
-    my $res = $ua->request($req);
-    if ($res->code() != HTTP_OK) {
-        return $self->error(
-            HTTP_BAD_REQUEST,
-            [ { title       => "Token Revocation Result",
-                description => [ "Token Revocation Failed" ] } ]
-        );
-    }
-
-    return $self->success(
-        [ { title       => "Token Revocation Result",
-            description => [ "Token Revocation Succeeded" ] } ]
-    );
-}
-
 sub post
 {
     my ($self, $c, $r) = @_;
@@ -231,11 +190,7 @@ sub post
     my $uri = $r->uri();
     my $path = $uri->path();
 
-    if ($path eq '/tokens/revoke') {
-	return $self->post_token_revoke($c, $r);
-    } else {
-        return $self->error(HTTP_NOT_FOUND);
-    }
+    return $self->error(HTTP_NOT_FOUND);
 }
 
 sub get_query
@@ -380,36 +335,6 @@ sub validate_id_token
     return 1;
 }
 
-sub get_query_using_token
-{
-    my ($self, $c, $r) = @_;
-
-    my $uri = $r->uri();
-    my $path = $uri->path();
-    my %args = $uri->query_form();
-
-    my ($access_token, $id_token) =
-        delete @args{qw(access_token id_token)};
-    if (not $access_token) {
-        my $header_value = $r->header('Authorization');
-        ($access_token) = ($header_value =~ /^Bearer\s+(.*)$/i);
-    }
-    if (not $access_token) {
-        warn "No access token found";
-        return $self->error(HTTP_FORBIDDEN);
-    }
-
-    # Do not pass the access token here, since it might have been
-    # refreshed since the ID token was issued.
-    my $res = $self->validate_id_token($id_token);
-    if (not $res) {
-        return $self->error(HTTP_BAD_REQUEST);
-    }
-
-    return $self->get_query_authenticated($path, \%args,
-                                          $id_token, $access_token);
-}
-
 sub retrieve_tokens
 {
     my ($self, $c, $r, $code) = @_;
@@ -455,84 +380,6 @@ sub retrieve_tokens
     }
 
     return $tokens;
-}
-
-sub get_query_using_code
-{
-    my ($self, $c, $r) = @_;
-
-    my $uri = $r->uri();
-    my $path = $uri->path();
-    my %args = $uri->query_form();
-
-    my ($code, $state) = delete @args{qw(code state)};    
-
-    my $tokens = $self->retrieve_tokens($c, $r, $code);
-    if (not $tokens) {
-        return $self->error(HTTP_BAD_REQUEST);
-    }
-
-    my $access_token = $tokens->access_token();
-    my $id_token = $tokens->id_token();
-
-    my $res = $self->validate_id_token($id_token, $access_token);
-    if (not $res) {
-        return $self->error(HTTP_BAD_REQUEST);
-    }
-
-    my $data = decode_json($state);
-    my $prev_path = $data->[2];
-
-    if ($prev_path eq '/tokens') {
-        my %data = (
-            "access_token" => $access_token,
-            "id_token"     => $id_token,
-            "token_type"   => "bearer",
-            "expires_in"   => $tokens->expires_in(),
-            ($tokens->refresh_token())
-                ? ("refresh_token" => $tokens->refresh_token())
-                : (),
-        );
-        return $self->success([], \%data);
-    } else {
-        return $self->get_query_authenticated($prev_path, \%args,
-                                              $id_token, $access_token);
-    }
-}
-
-sub refresh_token
-{
-    my ($self, $c, $r) = @_;
-
-    my $uri = $r->uri();
-    my $path = $uri->path();
-    my %args = $uri->query_form();
-    my $port = $self->{'port'};
-
-    my $id = $args{'id'};
-    my $name = $self->id_to_idp_name($id);
-    my $idp_client = $self->id_to_idp_client($id);
-    if (not $idp_client) {
-        warn "Could not find an IDP client";
-        return $self->error(HTTP_BAD_REQUEST);
-    }
-    my $access_token = $idp_client->refresh_access_token(
-        refresh_token => $args{'refresh_token'}
-    );
-    if (not $access_token) {
-        warn $idp_client->errstr();
-        return $self->error(HTTP_BAD_REQUEST);
-    }
-
-    my %data = (
-        "access_token"  => $access_token->access_token(),
-        "token_type"    => "bearer",
-        "expires_in"    => $access_token->expires_in(),
-        "refresh_token" => ($access_token->refresh_token()
-                            || $args{'refresh_token'})
-    );
-
-    return $self->success([], \%data);
 }
 
 sub authenticate_user
@@ -910,13 +757,9 @@ sub get
         } else {
             return $self->get_query_using_cookie($c, $r, $session);
         }
-    } elsif ($args{'id_token'}) {
-        return $self->get_query_using_token($c, $r);
     } elsif ($args{'code'}) {
         # Login response.
         return $self->get_login_response($c, $r);
-    } elsif ($args{'id'} and $args{'refresh_token'} and $path eq '/tokens') {
-        return $self->refresh_token($c, $r);
     } elsif ($path eq '/farv1_session/login') {
         return $self->authenticate_user($c, $r);
     } elsif ($path eq '/farv1_session/refresh') {
