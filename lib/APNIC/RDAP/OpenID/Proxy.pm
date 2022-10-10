@@ -592,7 +592,8 @@ sub get_login_response
     my $id_token_obj = OIDC::Lite::Model::IDToken->load($id_token); 
     my $iss = $id_token_obj->payload()->{'iss'};
     my $idp_name = $self->{'idp_iss_to_name'}->{$iss};
-    
+    my $idp_client = $self->{'idp'}->{$idp_name}->{'client'};
+ 
     my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
     my $userinfo_uri = $discovery->{'userinfo_endpoint'};
     my $req = HTTP::Request->new();
@@ -624,6 +625,7 @@ sub get_login_response
         refresh_token => $tokens->refresh_token(),
         id_token => $id_token_obj,
         expiry_time => $expiry_time,
+        idp_client => $idp_client,
         session_external => {
             iss => $id_token_obj->{'payload'}->{'iss'},
             userClaims => {
@@ -641,7 +643,9 @@ sub get_login_response
     $res = HTTP::Response->new(HTTP_OK);
     $res->header('Content-Type', 'application/rdap+json');
     $res->header('Set-Cookie', 'id='.$session_id.'; Max-Age=3600');
-    $res->content(encode_json($session_internal{'session_external'}));
+    $res->content(encode_json({
+        farv1_session => $session_internal{'session_external'}
+    }));
 
     return $res;
 }
@@ -658,13 +662,8 @@ sub get_query_using_cookie
         @{$session}{qw(access_token id_token)};
 
     if ($session->{'expiry_time'} < time()) {
-        warn "Access token has expired, deleting session";
-        delete $self->{'sessions'}->{$session->{'session_id'}};
-        return $self->error(HTTP_FORBIDDEN);
-    }
-
-    if (not $access_token) {
-        warn "No access token found";
+        warn "Access token has expired";
+        # Do not delete session, otherwise user cannot refresh token.
         return $self->error(HTTP_FORBIDDEN);
     }
 
@@ -674,6 +673,78 @@ sub get_query_using_cookie
     return $self->get_query_authenticated($path, \%args,
                                           $id_token, $access_token,
                                           $session);
+}
+
+sub refresh_session
+{
+    my ($self, $c, $r, $session) = @_;
+
+    my $uri = $r->uri();
+    my $path = $uri->path();
+    my %args = $uri->query_form();
+
+    my ($access_token, $id_token) =
+        @{$session}{qw(access_token id_token)};
+
+    my $idp_client = $session->{'idp_client'};
+    if (not $idp_client) {
+        warn "Could not find an IDP client";
+        return $self->error(HTTP_BAD_REQUEST);
+    }
+    my $new_access_token;
+    if ($args{'fail'}) {
+        $new_access_token = undef;
+    } else {
+        $new_access_token = $idp_client->refresh_access_token(
+            refresh_token => $session->{'refresh_token'}
+        );
+    }
+    if ($new_access_token) {
+        $session->{'new_access_token'} = $new_access_token->access_token();
+        $session->{'refresh_token'} = $new_access_token->refresh_token();
+        $session->{'expiry_time'} = time() + $new_access_token->expires_in();
+        $session->{'session_external'}->{'sessionInfo'} = {
+            tokenExpiration => $new_access_token->expires_in(),
+            tokenRefresh => ($new_access_token->refresh_token() ? \1 : \0)
+        };
+
+        my $res = HTTP::Response->new(HTTP_OK);
+        $res->content(encode_json({
+            notices => {
+                title => 'Session Refresh Result',
+                description => [
+                    'Session refresh succeeded'
+                ]
+            },
+            farv1_session => $session->{'session_external'}
+        }));
+        return $res;
+    } else {
+        if ($session->{'expiry_time'} < time()) {
+            my $res = HTTP::Response->new(HTTP_OK);
+            $res->content(encode_json({
+                notices => {
+                    title => 'Session Refresh Result',
+                    description => [
+                        'Session refresh failed'
+                    ]
+                },
+            }));
+            return $res;
+        } else {
+            my $res = HTTP::Response->new(HTTP_OK);
+            $res->content(encode_json({
+                notices => {
+                    title => 'Session Refresh Result',
+                    description => [
+                        'Session refresh failed'
+                    ]
+                },
+                farv1_session => $session->{'session_external'}
+            }));
+            return $res;
+        }
+    }
 }
 
 sub get
@@ -693,7 +764,11 @@ sub get
             return $self->error(HTTP_FORBIDDEN);
         }
         my $session = $self->{'sessions'}->{$id};
-        return $self->get_query_using_cookie($c, $r, $session);
+        if ($path eq '/farv1_session/refresh') {
+            return $self->refresh_session($c, $r, $session);
+        } else {
+            return $self->get_query_using_cookie($c, $r, $session);
+        }
     } elsif ($args{'id_token'}) {
         return $self->get_query_using_token($c, $r);
     } elsif ($args{'code'}) {
@@ -703,6 +778,12 @@ sub get
         return $self->refresh_token($c, $r);
     } elsif ($path eq '/farv1_session/login') {
         return $self->authenticate_user($c, $r);
+    } elsif ($path eq '/farv1_session/refresh') {
+        return $self->error(HTTP_CONFLICT);
+    } elsif ($path eq '/farv1_session/status') {
+        return $self->error(HTTP_CONFLICT);
+    } elsif ($path eq '/farv1_session/logout') {
+        return $self->error(HTTP_CONFLICT);
     } else {
         return $self->get_query_unauthenticated($path, \%args);
     }
