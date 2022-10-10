@@ -1,5 +1,7 @@
 # rdap-openid-proxy
 
+[![Build Status](https://github.com/APNIC-net/rdap-openid-proxy/workflows/build/badge.svg?branch=master)](https://github.com/APNIC-new/rdap-openid-proxy/actions)
+
 An OpenID Connect authentication proxy for an RDAP server, based on
 [draft-ietf-regext-rdap-openid](https://tools.ietf.org/html/draft-ietf-regext-rdap-openid-17).
 This is a proof-of-concept only, and is not intended for production
