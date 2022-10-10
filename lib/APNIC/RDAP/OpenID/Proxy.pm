@@ -420,13 +420,24 @@ sub retrieve_tokens
     my %args = $uri->query_form();
 
     my $data = decode_json($args{'state'});
+    use Data::Dumper;
+    warn Dumper($data);
+    my $prev_args = $data->[3];
     my $id = $data->[0];
-    my $prev_args = $data->[2];
-
-    my $idp_client = $self->id_to_idp_client($id);
-    if (not $idp_client) {
-        warn "No IDP client";
-        return;
+    my $idp_client;
+    if ($id) {
+        $idp_client = $self->id_to_idp_client($id);
+        if (not $idp_client) {
+            warn "No IDP client";
+            return;
+        }
+    } else {
+        my $idp_name = $data->[1];
+        $idp_client = $self->{'idp'}->{$idp_name}->{'client'};
+        if (not $idp_client) {
+            warn "No IDP client";
+            return;
+        }
     }
 
     my $tokens = $idp_client->get_access_token(
@@ -472,7 +483,7 @@ sub get_query_using_code
     }
 
     my $data = decode_json($state);
-    my $prev_path = $data->[1];
+    my $prev_path = $data->[2];
 
     if ($prev_path eq '/tokens') {
         my %data = (
@@ -535,8 +546,20 @@ sub authenticate_user
     my %args = $uri->query_form();
     my $port = $self->{'port'};
 
-    my $id = $args{'id'};
-    my $idp_client = $self->id_to_idp_client($id);
+        use Data::Dumper;
+        warn Dumper($self->{'idp_iss_to_name'});
+
+    my $iss = $args{'farv1_iss'};
+    my $id = $args{'farv1_id'};
+    my $idp_name;
+    my $idp_client;
+    if ($iss) {
+        $idp_name = $self->{'idp_iss_to_name'}->{$iss};
+        $idp_client = $self->{'idp'}->{$idp_name}->{'client'};
+    } else {
+        $idp_name = $self->id_to_idp_name($id);
+        $idp_client = $self->id_to_idp_client($id);
+    }
     if (not $idp_client) {
         warn "Could not find an IDP client";
         return $self->error(HTTP_BAD_REQUEST);
@@ -547,7 +570,7 @@ sub authenticate_user
 
     my $auth_uri = URI->new($self->{'redirect_uri'});
     my %extra = (
-        login_hint => $id,
+        ($id ? (login_hint => $id) : ()),
         # These are Google-specific parameters.
         ($refresh_required)
             ? (approval_prompt => 'force',
@@ -558,7 +581,7 @@ sub authenticate_user
         $idp_client->uri_to_redirect(
             redirect_uri => $auth_uri->as_string(),
             scope        => 'openid',
-            state        => encode_json([$id, $path, \%args]),
+            state        => encode_json([$id, $idp_name, $path, \%args]),
             extra        => \%extra,
         );
 
@@ -619,10 +642,6 @@ sub get_login_response
     } while ($self->{'sessions'}->{$session_id});
 
     my $expiry_time = time() + $tokens->expires_in();
-
-        warn time();
-        warn $tokens->expires_in();
-        warn $expiry_time;
 
     my %session_internal = (
         session_id => $session_id,

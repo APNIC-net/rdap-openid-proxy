@@ -32,8 +32,8 @@ sub new
     my %args = @_;
     my $self = \%args;
 
-    if (not defined $self->{"port"}) {
-        $self->{"port"} = 8082;
+    if (not $self->{'iss'}) {
+        $self->{'iss'} = 'test-iss';
     }
 
     my $ua = LWP::UserAgent->new();
@@ -44,7 +44,7 @@ sub new
                                    NonBlocking => 1);
 
     my $d = HTTP::Daemon->new(
-        LocalPort => $self->{"port"},
+        LocalPort => ($self->{"port"} || 0),
         ReuseAddr => 1,
         ReusePort => 1
     );
@@ -86,13 +86,14 @@ sub get_openid_configuration
     my $port = $self->{'port'};
     my $base = "http://localhost:$port";
     my %data = (
-        issuer                 => "test-iss",
+        issuer                 => $self->{'iss'},
         authorization_endpoint => "$base/authorise",
         token_endpoint         => "$base/token",
         userinfo_endpoint      => "$base/userinfo",
         revocation_endpoint    => "$base/revoke",
         jwks_uri               => "$base/jwks",
     );
+
 
     return $self->success(\%data);
 }
@@ -116,7 +117,7 @@ sub authorise
 
     my %payload = (
         aud     => $client_id,
-        iss     => 'test-iss',
+        iss     => $self->{'iss'},
         exp     => time() + $EXPIRY,
         azp     => $client_id,
         at_hash => $at_hash,
