@@ -161,7 +161,7 @@ sub response
     $response->content(
         encode_json({
             %{$extra || {}},
-            (@notices ? (notices => @notices)  : ()),
+            (@notices ? (notices => \@notices)  : ()),
         })
     );
 
@@ -197,7 +197,7 @@ sub post_token_revoke
         return $self->error(
             HTTP_BAD_REQUEST,
             [ { title       => "Token Revocation Result",
-                description => "Token Revocation Not Supported" } ]
+                description => [ "Token Revocation Not Supported" ] } ]
         );
     }
 
@@ -213,13 +213,13 @@ sub post_token_revoke
         return $self->error(
             HTTP_BAD_REQUEST,
             [ { title       => "Token Revocation Result",
-                description => "Token Revocation Failed" } ]
+                description => [ "Token Revocation Failed" ] } ]
         );
     }
 
     return $self->success(
         [ { title       => "Token Revocation Result",
-            description => "Token Revocation Succeeded" } ]
+            description => [ "Token Revocation Succeeded" ] } ]
     );
 }
 
@@ -626,6 +626,7 @@ sub get_login_response
         id_token => $id_token_obj,
         expiry_time => $expiry_time,
         idp_client => $idp_client,
+        idp_name => $idp_name,
         session_external => {
             iss => $id_token_obj->{'payload'}->{'iss'},
             userClaims => {
@@ -747,6 +748,64 @@ sub refresh_session
     }
 }
 
+sub logout_session
+{
+    my ($self, $c, $r, $session) = @_;
+
+    my $uri = $r->uri();
+    my $path = $uri->path();
+    my %args = $uri->query_form();
+
+    my ($access_token, $id_token, $refresh_token) =
+        @{$session}{qw(access_token id_token refresh_token)};
+
+    delete $self->{'sessions'}->{$session->{'session_id'}};
+
+    my $idp_name = $session->{'idp_name'};
+    my $discovery = $self->{'idp'}->{$idp_name}->{'discovery'};
+    my $idp_revocation_uri = $discovery->{'revocation_endpoint'};
+    my @notices = (
+        { title       => 'Logout Result',
+          description => [ 'Logout Succeeded' ] }
+    );
+    if ($idp_revocation_uri) {
+        for my $token_spec (['Access',  $access_token],
+                            ['Refresh', $refresh_token],
+                            # Can't be revoked: included to enliven the failure case.
+                            ['ID',      $id_token]) {
+            my ($name, $token) = @{$token_spec};
+            
+            my $req = HTTP::Request->new();
+            $req->uri($idp_revocation_uri);
+            $req->method('POST');
+            $req->content('token='.$token);
+            $req->header('Content-Type' => 'application/x-www-form-urlencoded');
+
+            my $ua = $self->{'ua'};
+            my $res = $ua->request($req);
+            if ($res->code() != HTTP_OK) {
+                push @notices,
+                    { title       => "Token Revocation Result",
+                      description => [ "$name Token Revocation Failed" ] };
+            } else {
+                push @notices,
+                    { title       => "Token Revocation Result",
+                      description => [ "$name Token Revocation Succeeded" ] };
+            }
+        }
+    }
+
+    my $content = {
+        notices => \@notices
+    };
+
+    my $res = HTTP::Response->new(HTTP_OK);
+    $res->header('Set-Cookie', 'id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;');
+    $res->header('Content-Type', 'application/rdap+json');
+    $res->content(encode_json($content));
+    return $res;
+}
+
 sub get
 {
     my ($self, $c, $r) = @_;
@@ -766,6 +825,8 @@ sub get
         my $session = $self->{'sessions'}->{$id};
         if ($path eq '/farv1_session/refresh') {
             return $self->refresh_session($c, $r, $session);
+        } elsif ($path eq '/farv1_session/logout') {
+            return $self->logout_session($c, $r, $session);
         } else {
             return $self->get_query_using_cookie($c, $r, $session);
         }
